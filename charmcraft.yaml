@@ -1,0 +1,45 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+name: authorization-service
+type: charm
+title: Charmed Authorization Service (Cerberus)
+summary: Policy decision point for the Canonical centralized identity solution.
+description: |
+  TBD
+links:
+  documentation: https://canonical-identity.readthedocs-hosted.com
+  source: https://github.com/canonical/authorization-service-operator
+  issues: https://github.com/canonical/authorization-service-operator/issues
+
+containers:
+  authorization-service:
+    resource: oci-image
+resources:
+  oci-image:
+    type: oci-image
+    description: Authorization Token Service oci-image
+    upstream-source: ghcr.io/canonical/authorization-service:v0.2.0
+
+config:
+  options:
+    log_level:
+      description: |
+        The verbosity of logs produced by STS.
+        Available values are: panic, fatal, error, warn, info, debug, and trace.
+      type: string
+      default: "info"
+
+########################### build ###########################
+platforms:
+  ubuntu@22.04:amd64:
+
+parts:
+  charm:
+    charm-binary-python-packages:
+      - jsonschema
+      - "setuptools>=70.0.0"
+    build-packages:
+      - "rustc-1.85"
+      - "cargo-1.85"
+

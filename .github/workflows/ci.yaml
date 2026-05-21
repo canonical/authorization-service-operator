@@ -1,0 +1,33 @@
+name: ci
+run-name: CI for ${{ github.sha }} on ${{ github.ref_name }}
+
+on:
+   workflow_dispatch:
+   push:
+     branches:
+     - "main"
+     - "release-**"
+     - "track/**"
+     paths-ignore:
+     - "terraform/**"
+   pull_request:
+     branches:
+     - "*"
+     paths-ignore:
+     - "terraform/**"
+
+jobs:
+  tests:
+    name: CI
+    permissions:
+      contents: read
+      packages: read
+    secrets:
+      GH_USERNAME: ${{ secrets.GH_USERNAME }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+    uses: canonical/identity-team/.github/workflows/charm-pull-request.yaml@732520bcf8f04f777f44d1c3677e7a89f7ce9ab6 # v1.11.0
+    with:
+      container-name: "authorization-service"
+      # TODO: Enable when onboarded to charmcraft cache
+      use-charmcraftcache: false
+      node-size: large
