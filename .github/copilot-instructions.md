@@ -1,4 +1,4 @@
-# GitHub Copilot Instructions for Secure Token Service Operator
+# GitHub Copilot Instructions for Authorization Service Operator
 
 ## 1. Governance & Constraints
 You **MUST NOT** modify the following critical configuration files without explicit user validation:

@@ -5,7 +5,7 @@ settings:
     opened: Untriaged
     closed: done
   components:
-    - Secure Token Service
+    - Authorization Service
   labels:
     - bug
     - enhancement

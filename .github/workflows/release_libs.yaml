@@ -32,7 +32,7 @@ jobs:
 
           echo "run_release=false" >> $GITHUB_OUTPUT
 
-          if git diff --name-only "$PREV_TAG" "$LATEST_TAG" | grep -q '^lib/charms/secure_token_service/'; then
+          if git diff --name-only "$PREV_TAG" "$LATEST_TAG" | grep -q '^lib/charms/authorization_service/'; then
             echo "Changes found in charm library"
             echo "run_release=true" >> $GITHUB_OUTPUT
           else
