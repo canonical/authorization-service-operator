@@ -19,7 +19,8 @@ resources:
   oci-image:
     type: oci-image
     description: Authorization Token Service oci-image
-    upstream-source: ghcr.io/canonical/authorization-service:v0.2.0
+    # TODO: Change image when published with correct version tag
+    upstream-source: ghcr.io/canonical/authorization-service:5453186c3db81e27a5acf39434e379901465d1e1  # v0.2.0
 
 config:
   options:
@@ -29,8 +30,59 @@ config:
         Available values are: panic, fatal, error, warn, info, debug, and trace.
       type: string
       default: "info"
+    dev:
+      type: boolean
+      default: false
+      description: Enable development mode.
+    http_proxy:
+      type: string
+      description: HTTP proxy URL.
+    https_proxy:
+      type: string
+      description: HTTPS proxy URL.
+    no_proxy:
+      type: string
+      description: Comma-separated list of domains excluded from proxying.
+    cpu:
+      type: string
+      description: Kubernetes CPU resource limit/request (e.g. "500m").
+    memory:
+      type: string
+      description: Kubernetes memory resource limit/request (e.g. "256Mi").
 
-########################### build ###########################
+requires:
+  pg-database:
+    interface: postgresql_client
+    limit: 1
+  openfga:
+    interface: openfga
+    limit: 1
+  ingress:
+    interface: istio_ingress_route
+    limit: 1
+  sts-info:
+    interface: sts_info
+    limit: 1
+  tracing:
+    interface: tracing
+    limit: 1
+
+provides:
+  forward-auth:
+    interface: forward_auth
+  logging:
+    interface: loki_push_api
+  grafana-dashboard:
+    interface: grafana_dashboard
+
+actions:
+  run-migration:
+    description: Run pending database migrations. Must be executed on the leader unit.
+
+peers:
+  authorization-service-peers:
+    interface: authorization_service_peers
+
 platforms:
   ubuntu@22.04:amd64:
 
