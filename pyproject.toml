@@ -114,9 +114,11 @@ unit = [
     "coverage[toml]",
 ]
 integration = [
-    "jubilant",
+    "pytest-jubilant>=2,<3",
     "pytest",
     "requests",
+    "tenacity",
+    "pyyaml",
 ]
 dev = [
     { include-group = "fmt" },
