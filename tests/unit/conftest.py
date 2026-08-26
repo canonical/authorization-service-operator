@@ -75,6 +75,7 @@ def create_state(
     can_connect: bool = True,
     config: dict[str, Any] | None = None,
     relations: list[testing.Relation] | None = None,
+    peer_relation: testing.PeerRelation | None = None,
     secrets: list[testing.Secret] | None = None,
     extra_execs: list[testing.Exec] | None = None,
 ) -> testing.State:
@@ -85,6 +86,7 @@ def create_state(
         can_connect: Whether the workload container is connectable.
         config: Charm configuration dict.
         relations: List of active relations.
+        peer_relation: Custom peer relation if overriding default.
         secrets: Juju secrets.
         extra_execs: Additional Exec mocks beyond the default version command.
 
@@ -113,12 +115,14 @@ def create_state(
         execs=set(default_execs),
     )
 
+    p_rel = peer_relation or testing.PeerRelation(endpoint=PEER_INTEGRATION_NAME)
+
     return testing.State(
         containers=[container],
         config=config or {},
         leader=leader,
         model=testing.Model(name=MODEL_NAME),
-        relations=[testing.PeerRelation(endpoint=PEER_INTEGRATION_NAME), *(relations or [])],
+        relations=[p_rel, *(relations or [])],
         secrets=secrets or [],
     )
 

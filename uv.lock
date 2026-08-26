@@ -164,7 +164,7 @@ unit = [
 
 [package.metadata]
 requires-dist = [
-    { name = "authorization-service-operator-shared", git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=IAM-2310-authorization-service-shared-lib" },
+    { name = "authorization-service-operator-shared", git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=main" },
     { name = "charmlibs-interfaces-istio-ingress-route", specifier = "==1.0.2" },
     { name = "cosl", specifier = "~=1.9.1" },
     { name = "jsonschema", specifier = "==4.26.0" },
@@ -220,10 +220,11 @@ unit = [
 [[package]]
 name = "authorization-service-operator-shared"
 version = "0.1.0"
-source = { git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=IAM-2310-authorization-service-shared-lib#4792c0fab7874bebcb148ead7260177bbb9f1415" }
+source = { git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=main#064520c66b07fad961763fb09598b6b621b469e0" }
 dependencies = [
     { name = "charmlibs-interfaces-istio-ingress-route" },
     { name = "ops" },
+    { name = "pydantic" },
 ]
 
 [[package]]

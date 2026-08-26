@@ -106,7 +106,7 @@ version = "0.1.0"
 description = "Canonical Authorization Service Operator"
 requires-python = ">=3.10"
 dependencies = [
-    "authorization-service-operator-shared @ git+https://github.com/canonical/authorization-service-operator-shared.git@IAM-2310-authorization-service-shared-lib",
+    "authorization-service-operator-shared @ git+https://github.com/canonical/authorization-service-operator-shared.git@main",
     "charmlibs-interfaces-istio-ingress-route==1.0.2",
     "cosl~=1.9.1",
     "jsonschema==4.26.0",
@@ -156,4 +156,4 @@ package = false
 
 # Shared library for the authorization service operators
 [tool.uv.sources]
-authorization-service-operator-shared = { git = "https://github.com/canonical/authorization-service-operator-shared.git", branch = "IAM-2310-authorization-service-shared-lib" }
+authorization-service-operator-shared = { git = "https://github.com/canonical/authorization-service-operator-shared.git", branch = "main" }

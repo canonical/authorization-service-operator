@@ -2,13 +2,31 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charm for the Canonical Authorization Service Server (Cerberus)."""
+"""Charm for the Canonical Authorization Service Server."""
 
 import logging
 from functools import cached_property
 
 import ops
-from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from authorization_service_operator_shared.cli import CommandLine
+from authorization_service_operator_shared.configs import CharmConfig
+from authorization_service_operator_shared.database import DatabaseRelationHandler
+from authorization_service_operator_shared.exceptions import (
+    CreateFgaModelError,
+    IntegrationDataError,
+    WorkloadError,
+)
+from authorization_service_operator_shared.info import AuthorizationServiceInfoProvider
+from authorization_service_operator_shared.ingress import IstioIngressIntegration
+from authorization_service_operator_shared.observability import TracingConfig
+from authorization_service_operator_shared.openfga import OpenFGAModelData, OpenFGARelationHandler
+from authorization_service_operator_shared.peer import PeerData
+from authorization_service_operator_shared.services import (
+    PebbleService,
+    WorkloadService,
+)
+from authorization_service_operator_shared.sts import STSRelationHandler
+from authorization_service_operator_shared.utils import container_connectivity
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.oauth2_proxy_k8s.v0.forward_auth import ForwardAuthConfig, ForwardAuthProvider
@@ -18,16 +36,11 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     ResourceRequirements,
     adjust_resource_requirements,
 )
-from charms.openfga_k8s.v1.openfga import (
-    OpenFGARequires,
-    OpenFGAStoreRemovedEvent,
-)
-from charms.secure_token_service.v0.sts_info import StsInfoRequirer
+from charms.openfga_k8s.v1.openfga import OpenFGARequires, OpenFGAStoreRemovedEvent
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 
-from cli import CommandLine
-from configs import CharmConfig
 from constants import (
+    AUTHORIZATION_SERVICE_INFO_INTEGRATION_NAME,
     CONTAINER_NAME,
     FORWARD_AUTH_INTEGRATION_NAME,
     GRAFANA_DASHBOARD_INTEGRATION_NAME,
@@ -37,24 +50,11 @@ from constants import (
     MIGRATION_COMPLETED,
     OPENFGA_INTEGRATION_NAME,
     OPENFGA_MODEL_ID,
-    OPENFGA_STORE_NAME,
     PEER_INTEGRATION_NAME,
     PG_DATABASE_INTEGRATION_NAME,
     STS_INFO_INTEGRATION_NAME,
     TRACING_INTEGRATION_NAME,
 )
-from exceptions import CreateFgaModelError, IntegrationDataError, WorkloadError
-from integrations import (
-    DatabaseConfig,
-    IstioIngressIntegration,
-    OpenFGAIntegration,
-    OpenFGAModelData,
-    PeerData,
-    StsConfig,
-    TracingConfig,
-)
-from services import PebbleService, WorkloadService
-from utils import container_connectivity, openfga_store_readiness, peer_integration_exists
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +72,17 @@ class AuthorizationServiceCharm(ops.CharmBase):
 
         container = self.unit.get_container(CONTAINER_NAME)
         self._cli = CommandLine(container)
-        self._pebble_service = PebbleService(container)
-        self._workload_service = WorkloadService(self.unit, self._cli, container)
+        self._pebble_service = PebbleService(
+            container,
+            service_name=CONTAINER_NAME,
+            command="/usr/bin/app serve",
+        )
+        self._workload_service = WorkloadService(
+            self.unit,
+            self._cli,
+            container,
+            service_name=CONTAINER_NAME,
+        )
         self.peer_data = PeerData(self.model)
         self._charm_config = CharmConfig(self.model.config)
 
@@ -85,17 +94,28 @@ class AuthorizationServiceCharm(ops.CharmBase):
         )
 
         # Integration helpers
-        self._database = DatabaseRequires(
+        self._database = DatabaseRelationHandler(
             self,
             relation_name=PG_DATABASE_INTEGRATION_NAME,
-            database_name="cerberus",
+            database_name="authorization_service",
         )
-        self._openfga_requirer = OpenFGARequires(
-            self, store_name=OPENFGA_STORE_NAME, relation_name=OPENFGA_INTEGRATION_NAME
-        )
-        self.openfga_integration = OpenFGAIntegration(self._openfga_requirer)
 
-        self._sts = StsInfoRequirer(self, relation_name=STS_INFO_INTEGRATION_NAME)
+        self._openfga_requires = OpenFGARequires(
+            self,
+            store_name="authorization-service",
+            relation_name=OPENFGA_INTEGRATION_NAME,
+        )
+        self._openfga = OpenFGARelationHandler(self._openfga_requires)
+
+        self._sts = STSRelationHandler(
+            self,
+            relation_name=STS_INFO_INTEGRATION_NAME,
+        )
+
+        self.authz_info_provider = AuthorizationServiceInfoProvider(
+            self,
+            relation_name=AUTHORIZATION_SERVICE_INFO_INTEGRATION_NAME,
+        )
 
         # Ingress
         self.istio_ingress = IstioIngressIntegration(self, relation_name=INGRESS_INTEGRATION_NAME)
@@ -127,8 +147,12 @@ class AuthorizationServiceCharm(ops.CharmBase):
         self.framework.observe(self.on.upgrade_charm, self._on_holistic_handler)
 
         # Database events
-        self.framework.observe(self._database.on.database_created, self._on_holistic_handler)
-        self.framework.observe(self._database.on.endpoints_changed, self._on_holistic_handler)
+        self.framework.observe(
+            self._database.postgres.on.database_created, self._on_holistic_handler
+        )
+        self.framework.observe(
+            self._database.postgres.on.endpoints_changed, self._on_holistic_handler
+        )
         self.framework.observe(
             self.on[PG_DATABASE_INTEGRATION_NAME].relation_broken,
             self._on_database_relation_broken,
@@ -136,28 +160,33 @@ class AuthorizationServiceCharm(ops.CharmBase):
 
         # OpenFGA events
         self.framework.observe(
-            self._openfga_requirer.on.openfga_store_created, self._on_holistic_handler
+            self._openfga_requires.on.openfga_store_created, self._on_holistic_handler
         )
         self.framework.observe(
-            self._openfga_requirer.on.openfga_store_removed, self._on_openfga_store_removed
+            self._openfga_requires.on.openfga_store_removed, self._on_openfga_store_removed
         )
 
         # Tracing events
         self.framework.observe(
-            self.on[TRACING_INTEGRATION_NAME].relation_changed, self._on_holistic_handler
+            self._tracing.on.endpoint_changed, self._on_holistic_handler
         )
         self.framework.observe(
-            self.on[TRACING_INTEGRATION_NAME].relation_broken, self._on_holistic_handler
+            self._tracing.on.endpoint_removed, self._on_holistic_handler
         )
 
         # STS events
-        self.framework.observe(self._sts.on.sts_info_relation_updated, self._on_holistic_handler)
-        self.framework.observe(self._sts.on.sts_info_relation_broken, self._on_holistic_handler)
+        self.framework.observe(
+            self._sts.requirer.on.sts_info_relation_updated, self._on_holistic_handler
+        )
+        self.framework.observe(
+            self._sts.requirer.on.sts_info_relation_broken, self._on_holistic_handler
+        )
 
         # Ingress events
         self.framework.observe(self.istio_ingress.requirer.on.ready, self._on_ingress_ready)
 
         # Resources patch event
+
         self.framework.observe(
             self.resources_patch.on.patch_failed, self._on_resource_patch_failed
         )
@@ -173,44 +202,54 @@ class AuthorizationServiceCharm(ops.CharmBase):
             self.on[PEER_INTEGRATION_NAME].relation_changed, self._on_holistic_handler
         )
 
+        # Authorization service info relation events
+        self.framework.observe(
+            self.authz_info_provider.on.authorization_service_info_relation_ready,
+            self._on_holistic_handler,
+        )
+
         # Status collection
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
     # --- Properties ---
 
     @cached_property
-    def _database_config(self) -> DatabaseConfig:
-        """Database config from relation data, computed once per event dispatch."""
-        return DatabaseConfig.load(self._database)
-
-    @cached_property
     def _workload_version(self) -> str:
         """Workload version string, computed once per event dispatch."""
         return self._workload_service.version
 
-    @property
+    @cached_property
     def _migration_pending(self) -> bool:
         """True if the database migration has not been completed for the current version.
 
-        Uses the CLI to check migration status. Falls back to False on any error.
+        Uses the CLI to check migration status. Cached per hook execution.
         """
-        if not self._database_config.is_ready:
+        if not container_connectivity(self, CONTAINER_NAME):
+            return False
+        if not self._database.is_ready():
             return False
         try:
-            return self._cli.migrate_status()
+            return self._cli.migrate_status(self._database.dsn)
         except WorkloadError as exc:
             logger.error("Failed to check migration status: %s", exc)
             return False
+
+    @property
+    def _openfga_model_id(self) -> str:
+        """OpenFGA model ID for the current workload version."""
+        version_key = f"{OPENFGA_MODEL_ID}_{self._workload_version}"
+        model_data = self.peer_data.get(version_key, "")
+        return model_data if isinstance(model_data, str) else ""
 
     @property
     def _pebble_layer(self) -> ops.pebble.Layer:
         """Pebble layer with all available env var sources merged."""
         return self._pebble_service.render_pebble_layer(
             self._charm_config,
-            self._database_config,
-            self.openfga_integration.openfga_integration_data,
-            OpenFGAModelData.load(self.peer_data[self._workload_version]),
-            StsConfig.load(self._sts),
+            self._database,
+            self._openfga,
+            OpenFGAModelData.load(self._openfga_model_id),
+            self._sts,
             TracingConfig.load(self._tracing),
         )
 
@@ -222,6 +261,24 @@ class AuthorizationServiceCharm(ops.CharmBase):
         requests = {"cpu": "100m", "memory": "200Mi"}
         return adjust_resource_requirements(limits, requests, adhere_to_requests=True)
 
+    def _publish_info(self) -> None:
+        """Publish current workload, migration, and OpenFGA info to requirers."""
+        if not self.unit.is_leader():
+            return
+
+        mig_data = self.peer_data.get(MIGRATION_COMPLETED, "")
+        migration_version = mig_data if isinstance(mig_data, str) else ""
+
+        fga_env = self._openfga.get_env_vars() if self._openfga.is_ready() else {}
+        openfga_store_id = fga_env.get("OPENFGA_STORE_ID", "")
+
+        self.authz_info_provider.publish_info(
+            workload_version=self._workload_version,
+            migration_version=migration_version,
+            openfga_store_id=openfga_store_id,
+            openfga_model_id=self._openfga_model_id,
+        )
+
     def _ensure_openfga_model(self) -> bool:
         """Ensure the OpenFGA authorization model is created and stored in peer data.
 
@@ -229,29 +286,32 @@ class AuthorizationServiceCharm(ops.CharmBase):
             True when the model ID is available (already created or just created),
             False when a prerequisite is not yet satisfied.
         """
-        if not openfga_store_readiness(self):
+        if not self._openfga.is_ready():
             return False
-        if not peer_integration_exists(self):
+        if not self.model.relations.get(PEER_INTEGRATION_NAME):
             return False
 
-        version = self._workload_version
-        if not version:
-            return False
-        if self.peer_data[version].get(OPENFGA_MODEL_ID):
+        version_key = f"{OPENFGA_MODEL_ID}_{self._workload_version}"
+        if self.peer_data.get(version_key):
             return True
 
         if not self.unit.is_leader():
             return False
 
         try:
-            model_id = self._workload_service.create_openfga_model(
-                self.openfga_integration.openfga_integration_data.store_id
-            )
-        except (CreateFgaModelError, IntegrationDataError):
-            logger.exception("Failed to create OpenFGA model")
+            env_vars = self._openfga.get_env_vars()
+            store_id = env_vars.get("OPENFGA_STORE_ID")
+            if not store_id:
+                logger.warning("OPENFGA_STORE_ID missing from OpenFGA env_vars")
+                return False
+            model_id = self._workload_service.create_openfga_model(store_id, env=env_vars)
+            logger.info("Successfully created OpenFGA model %s for version %s", model_id, self._workload_version)
+
+        except (CreateFgaModelError, IntegrationDataError) as exc:
+            logger.exception("Failed to create OpenFGA model: %s", exc)
             return False
 
-        self.peer_data[version] = {OPENFGA_MODEL_ID: model_id}
+        self.peer_data[version_key] = model_id
         return True
 
     # --- Event handlers ---
@@ -265,17 +325,35 @@ class AuthorizationServiceCharm(ops.CharmBase):
         if self.unit.is_leader() and self.istio_ingress.requirer.is_ready():
             self.istio_ingress.submit_routes()
 
-        if not container_connectivity(self):
+        if not container_connectivity(self, CONTAINER_NAME):
             return
-        if not self._database_config.is_ready:
+        if not self._database.is_ready():
             return
-        if self._migration_pending:
+
+        # Phase 1: Database Migration Check & Publish
+        if self.unit.is_leader() and self._migration_pending:
+            try:
+                self._cli.run_migration(self._database.dsn)
+            except WorkloadError as exc:
+                logger.error("Failed to run database migration: %s", exc)
+                return
+            self.peer_data[MIGRATION_COMPLETED] = self._workload_service.version
+            self.__dict__.pop("_migration_pending", None)
+        elif self._migration_pending:
             return
-        if not openfga_store_readiness(self):
+
+        if self.peer_data.get(MIGRATION_COMPLETED):
+            self._publish_info()
+
+        # Phase 2: OpenFGA Model/Store Check & Publish
+        if not self._openfga.is_ready():
             return
         if not self._ensure_openfga_model():
             return
 
+        self._publish_info()
+
+        # Phase 3: Workload Container Planning
         self._pebble_service.plan(self._pebble_layer)
 
     def _on_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
@@ -313,7 +391,7 @@ class AuthorizationServiceCharm(ops.CharmBase):
             event: The ingress ready event.
         """
         external_url = self.istio_ingress.external_url
-        logger.info("Ingress ready: %s", external_url or "(none)")
+        logger.info("Ingress ready: %s", external_url)
         self._on_holistic_handler(event)
 
     def _on_run_migration_action(self, event: ops.ActionEvent) -> None:
@@ -326,17 +404,16 @@ class AuthorizationServiceCharm(ops.CharmBase):
             event.fail("Only the leader can run migrations")
             return
 
-        if not container_connectivity(self):
+        if not container_connectivity(self, CONTAINER_NAME):
             event.fail("Container is not ready")
             return
 
-        db = self._database_config
-        if not db.is_ready:
+        if not self._database.is_ready():
             event.fail("Database integration is not ready")
             return
 
         try:
-            self._cli.run_migration(db.dsn)
+            self._cli.run_migration(self._database.dsn)
         except WorkloadError as exc:
             event.fail(str(exc))
             return
@@ -344,6 +421,7 @@ class AuthorizationServiceCharm(ops.CharmBase):
         # Writing to peer data triggers peer_relation_changed on all units,
         # allowing non-leader units to re-evaluate and proceed via the holistic handler.
         self.peer_data[MIGRATION_COMPLETED] = self._workload_service.version
+        self.__dict__.pop("_migration_pending", None)
         self._on_holistic_handler(event)
 
     def _on_resource_patch_failed(self, event: K8sResourcePatchFailedEvent) -> None:
@@ -366,29 +444,29 @@ class AuthorizationServiceCharm(ops.CharmBase):
 
         event.add_status(self.resources_patch.get_status())
 
-        if not container_connectivity(self):
+        if not container_connectivity(self, CONTAINER_NAME):
             event.add_status(ops.WaitingStatus("Waiting for container"))
 
-        if not peer_integration_exists(self):
+        if not self.model.relations.get(PEER_INTEGRATION_NAME):
             event.add_status(ops.WaitingStatus("Waiting for peer integration"))
-
-        if self._migration_pending:
-            event.add_status(ops.BlockedStatus("Waiting for database migration"))
 
         if not self.model.relations.get(PG_DATABASE_INTEGRATION_NAME):
             event.add_status(
                 ops.BlockedStatus(f"Missing required relation: {PG_DATABASE_INTEGRATION_NAME}")
             )
 
-        if not self._database_config.is_ready:
+        if not self._database.is_ready():
             event.add_status(ops.WaitingStatus("Waiting for database credentials"))
+
+        if self._migration_pending:
+            event.add_status(ops.BlockedStatus("Waiting for database migration"))
 
         if not self.model.relations.get(OPENFGA_INTEGRATION_NAME):
             event.add_status(
                 ops.BlockedStatus(f"Missing required relation: {OPENFGA_INTEGRATION_NAME}")
             )
 
-        if not openfga_store_readiness(self):
+        if not self._openfga.is_ready():
             event.add_status(ops.WaitingStatus("OpenFGA store is not ready yet"))
 
         if not self._workload_service.is_running():

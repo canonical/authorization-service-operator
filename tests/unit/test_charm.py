@@ -408,3 +408,37 @@ def test_run_migration_action_workload_error_calls_fail(
     with pytest.raises(testing.ActionFailed) as exc_info:
         CTX.run(CTX.on.action("run-migration"), state)
     assert "DB error" in exc_info.value.message
+
+
+def test_authorization_service_info_relation_publishes_data(
+    mocker: MockerFixture,
+    mock_openfga_ready: None,
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    info_relation = testing.Relation(
+        endpoint="authorization-service-info",
+        interface="authorization_service_info",
+    )
+    peer_relation = testing.PeerRelation(
+        endpoint="authorization-service-peers",
+        interface="authorization_service_peers",
+        local_app_data={MIGRATION_COMPLETED: '"0.1.0"'},
+    )
+
+    state = create_state(
+        leader=True,
+        peer_relation=peer_relation,
+        relations=[database_relation, openfga_relation, info_relation],
+    )
+    out = CTX.run(
+        CTX.on.relation_joined(info_relation),
+        state,
+    )
+
+    out_rel = out.get_relation(info_relation.id)
+    assert out_rel.local_app_data.get("migration_version") == "0.1.0"

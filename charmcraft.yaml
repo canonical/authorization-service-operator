@@ -21,8 +21,7 @@ resources:
   oci-image:
     type: oci-image
     description: Authorization Token Service oci-image
-    # TODO: Change image when published with correct version tag
-    upstream-source: ghcr.io/canonical/authorization-service:5453186c3db81e27a5acf39434e379901465d1e1  # v0.2.0
+    upstream-source: ghcr.io/canonical/authorization-service:v2.0.2
 
 config:
   options:
@@ -76,6 +75,8 @@ provides:
     interface: loki_push_api
   grafana-dashboard:
     interface: grafana_dashboard
+  authorization-service-info:
+    interface: authorization_service_info
 
 actions:
   run-migration:
