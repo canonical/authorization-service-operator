@@ -4,9 +4,9 @@
 """Shared fixtures for charm unit tests."""
 
 from typing import Any
-from unittest.mock import PropertyMock
 
 import pytest
+from authorization_service_operator_shared.openfga import OpenFGAConfig
 from ops import ActiveStatus, testing
 from pytest_mock import MockerFixture
 
@@ -20,26 +20,29 @@ from constants import (
     STS_INFO_INTEGRATION_NAME,
     TRACING_INTEGRATION_NAME,
 )
-from integrations import OpenFGAIntegrationData
 
 APP_NAME = "authorization-service"
 MODEL_NAME = "testing"
 
-OPENFGA_INTEGRATION_DATA = OpenFGAIntegrationData(
-    url="http://openfga.internal:8080",
+OPENFGA_INTEGRATION_DATA = OpenFGAConfig(
+    address="http://openfga.internal:8080",
     store_id="store-abc",
-    api_token="api-key",
+    token="api-key",
 )
 
 
 @pytest.fixture
 def mock_openfga_ready(mocker: MockerFixture) -> None:
     """Mock the OpenFGA integration as store-ready with model available."""
-    mocker.patch("integrations.OpenFGAIntegration.is_store_ready", return_value=True)
+    mocker.patch("charm.OpenFGARelationHandler.is_ready", return_value=True)
     mocker.patch(
-        "integrations.OpenFGAIntegration.openfga_integration_data",
-        new_callable=PropertyMock,
-        return_value=OPENFGA_INTEGRATION_DATA,
+        "charm.OpenFGARelationHandler.get_env_vars",
+        return_value={
+            "OPENFGA_ADDRESS": "http://openfga.internal:8080",
+            "OPENFGA_STORE_ID": "store-abc",
+            "OPENFGA_API_KEY": "api-key",
+            "OPENFGA_AUTHZ_MODEL_ID": "model-xyz",
+        },
     )
     mocker.patch("charm.AuthorizationServiceCharm._ensure_openfga_model", return_value=True)
 
@@ -105,6 +108,18 @@ def create_state(
                 stdout="up-to-date\n",
             )
         )
+        default_execs.append(
+            testing.Exec(
+                [
+                    "/usr/bin/app",
+                    "migrate",
+                    "--dsn",
+                    "postgres://authz_user:authz_pass@pg.internal:5432/authorization_service",
+                ],
+                return_code=0,
+                stdout="migration applied\n",
+            )
+        )
 
     if extra_execs:
         default_execs.extend(extra_execs)
@@ -149,8 +164,8 @@ def database_relation() -> testing.Relation:
             "data": '{"database": "authorization_service"}',
             "database": "authorization_service",
             "endpoints": "pg.internal:5432",
-            "username": "cerberus_user",
-            "password": "cerberus_pass",
+            "username": "authz_user",
+            "password": "authz_pass",
         },
     )
 
