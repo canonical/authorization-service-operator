@@ -1,7 +1,0 @@
-ops ~=3.0
-cosl~=1.9.1
-pydantic~=2.13.4
-lightkube~=0.21.0
-lightkube-models~=1.35.0.8
-charmlibs-interfaces-istio-ingress-route==1.0.2
-jsonschema==4.26.0

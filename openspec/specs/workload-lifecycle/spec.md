@@ -76,7 +76,7 @@ The operator triggers migration by running `juju run <unit> run-migration`. The 
 - **THEN** the action fails with the error message
 
 ### Requirement: Pebble health check is defined in the service layer and managed by Pebble
-The `PEBBLE_LAYER_DICT` constant in `src/services.py` SHALL include a Pebble `http` check named `"ready"` with `on-check-failure: restart`. This check is a **Pebble-managed** background concern — it drives automatic service restarts but does NOT gate the charm's `ActiveStatus`. The charm sets `ActiveStatus` based on successful event handling, not by polling the check.
+The `make_pebble_layer_dict()` function in `authorization_service_operator_shared.services` SHALL include a Pebble `http` check named `"ready"` with `on-check-failure: restart`. This check is a **Pebble-managed** background concern — it drives automatic service restarts but does NOT gate the charm's `ActiveStatus`. The charm sets `ActiveStatus` based on successful event handling, not by polling the check.
 
 #### Scenario: Health check is present in the layer definition
 - **WHEN** `PebbleService.render_pebble_layer(*sources)` is called
@@ -90,18 +90,18 @@ The charm SHALL call `WorkloadService.open_port()` to open both `HTTP_PORT` (807
 - **WHEN** the service starts successfully on `pebble_ready`
 - **THEN** the charm opens port `8070` (TCP) and port `9091` (TCP) on the unit
 
-### Requirement: Workload requires OpenFGA integration to start
-The charm SHALL block when the `openfga` relation (interface: `openfga_k8s.v1.openfga`, provider: `openfga-k8s`) is absent, as the Authorization Service cannot function without its policy engine. When joined, `OpenFGAConfig.to_env_vars()` SHALL supply `OPENFGA_ADDRESS`, `OPENFGA_STORE_ID`, `OPENFGA_AUTHZ_MODEL_ID`, and `OPENFGA_API_KEY`.
+### Requirement: Workload requires OpenFGA integration to manage authorization models
+The charm SHALL block when the `openfga` relation (interface: `openfga_k8s.v1.openfga`, provider: `openfga-k8s`) is absent, as the Authorization Service relies on OpenFGA for policy store and authorization model management. When joined, `OpenFGARelationHandler.get_store_info()` and `create_openfga_model()` provide store and model management, and publish store ID and model ID via `authorization-service-info`.
 
 #### Scenario: OpenFGA relation is absent
 - **WHEN** the unit starts and no `openfga` relation is joined
 - **THEN** `_on_collect_status` reports `BlockedStatus("Waiting for openfga relation")`
 - **AND** the Pebble service is NOT started
 
-#### Scenario: OpenFGA relation provides all required fields
-- **WHEN** the `openfga` relation is joined with store ID, model ID, API key, and address
-- **THEN** `OpenFGAConfig.to_env_vars()` returns the four `OPENFGA_*` env vars
-- **AND** `_on_holistic_handler()` re-applies the Pebble layer
+#### Scenario: OpenFGA relation provides store details
+- **WHEN** the `openfga` relation is joined with store ID, token, and address
+- **THEN** `OpenFGARelationHandler` manages the model creation and stores `openfga_store_id` and `openfga_model_id` in peer data
+- **AND** `AuthorizationServiceInfoProvider` publishes them on `authorization-service-info`
 
 #### Scenario: OpenFGA relation is removed
 - **WHEN** the `openfga` `relation_broken` event fires

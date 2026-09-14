@@ -5,14 +5,16 @@
 
 import ops
 import pytest
+from authorization_service_operator_shared.database import DatabaseConfig
+from authorization_service_operator_shared.exceptions import WorkloadError
+from authorization_service_operator_shared.observability import TracingConfig
+from authorization_service_operator_shared.sts import StsConfig
+from conftest import MODEL_NAME, create_state
 from ops import testing
 from pytest_mock import MockerFixture
 
 from charm import AuthorizationServiceCharm
-from constants import GRPC_PORT, MIGRATION_COMPLETED
-from exceptions import WorkloadError
-from integrations import DatabaseConfig, StsConfig, TracingConfig
-from tests.unit.conftest import MODEL_NAME, create_state
+from constants import GRPC_PORT, MIGRATION_COMPLETED, OPENFGA_MODEL_ID
 
 CHARM_TYPE = AuthorizationServiceCharm
 CTX = testing.Context(CHARM_TYPE)
@@ -21,8 +23,8 @@ DB_CONFIG = DatabaseConfig(
     host="pg.internal",
     port="5432",
     dbname="authorization_service",
-    username="cerberus_user",
-    password="cerberus_pass",
+    username="authz_user",
+    password="authz_pass",
 )
 
 STS_CONFIG = StsConfig(
@@ -45,7 +47,10 @@ def test_pebble_ready_all_present_yields_active(
     database_relation: testing.Relation,
     openfga_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
 
     state = create_state(relations=[database_relation, openfga_relation])
     out = CTX.run(
@@ -81,7 +86,10 @@ def test_pebble_ready_missing_openfga_yields_blocked(
     mocker: MockerFixture,
     database_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
 
     state = create_state(relations=[database_relation])
     out = CTX.run(
@@ -115,8 +123,11 @@ def test_collect_status_missing_peer_integration_yields_waiting(
     # Use State directly without the peer relation auto-added by create_state.
     # Both DB and OpenFGA relations are present so their BlockedStatuses do not
     # overshadow the peer WaitingStatus check.
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
-    mocker.patch("integrations.OpenFGAIntegration.is_store_ready", return_value=True)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch("charm.OpenFGARelationHandler.is_ready", return_value=True)
     container = testing.Container(
         name="authorization-service",
         can_connect=True,
@@ -150,7 +161,10 @@ def test_config_changed_valid_applies_pebble_layer(
     database_relation: testing.Relation,
     openfga_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
 
     state = create_state(
         config={"log_level": "debug"},
@@ -186,7 +200,10 @@ def test_openfga_relation_broken_yields_blocked(
     database_relation: testing.Relation,
     openfga_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
     state = create_state(relations=[database_relation, openfga_relation])
     out = CTX.run(CTX.on.relation_broken(openfga_relation), state)
     assert isinstance(out.unit_status, ops.BlockedStatus)
@@ -204,8 +221,14 @@ def test_tracing_relation_changed_sets_telemetry_enabled(
     openfga_relation: testing.Relation,
     tracing_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
-    mocker.patch("integrations.TracingConfig.load", return_value=TRACING_CONFIG)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch(
+        "authorization_service_operator_shared.observability.TracingConfig.load",
+        return_value=TRACING_CONFIG,
+    )
 
     state = create_state(relations=[database_relation, openfga_relation, tracing_relation])
     out = CTX.run(CTX.on.relation_changed(tracing_relation), state)
@@ -226,8 +249,11 @@ def test_upgrade_charm_no_migration_needed_yields_active(
     database_relation: testing.Relation,
     openfga_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
-    mocker.patch("cli.CommandLine.migrate_status", return_value=False)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch("charm.CommandLine.migrate_status", return_value=False)
 
     state = create_state(relations=[database_relation, openfga_relation])
     out = CTX.run(CTX.on.upgrade_charm(), state)
@@ -244,7 +270,7 @@ def test_upgrade_charm_migration_pending_yields_blocked(
     database_relation: testing.Relation,
     openfga_relation: testing.Relation,
 ) -> None:
-    mocker.patch("cli.CommandLine.migrate_status", return_value=True)
+    mocker.patch("charm.CommandLine.migrate_status", return_value=True)
 
     state = create_state(relations=[database_relation, openfga_relation])
     out = CTX.run(CTX.on.upgrade_charm(), state)
@@ -263,8 +289,11 @@ def test_upgrade_charm_migrate_status_raises_proceeds_to_holistic(
     database_relation: testing.Relation,
     openfga_relation: testing.Relation,
 ) -> None:
-    mocker.patch("cli.CommandLine.migrate_status", side_effect=WorkloadError("fail"))
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
+    mocker.patch("charm.CommandLine.migrate_status", side_effect=WorkloadError("fail"))
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
 
     state = create_state(relations=[database_relation, openfga_relation])
     out = CTX.run(CTX.on.upgrade_charm(), state)
@@ -284,8 +313,18 @@ def test_sts_relation_updated_sets_sts_env_vars(
     openfga_relation: testing.Relation,
     sts_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
-    mocker.patch("integrations.StsConfig.load", return_value=STS_CONFIG)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch(
+        "charm.STSRelationHandler.get_env_vars",
+        return_value={
+            "EXTAUTHZ_JWK_SET_URL": "https://sts.internal/jwks",
+            "STS_ADDRESS": "sts.internal:9090",
+            "STS_USE_TLS": "false",
+        },
+    )
 
     state = create_state(relations=[database_relation, openfga_relation, sts_relation])
     out = CTX.run(CTX.on.relation_changed(sts_relation), state)
@@ -309,8 +348,13 @@ def test_sts_relation_broken_removes_sts_vars_stays_active(
     openfga_relation: testing.Relation,
     sts_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
-    mocker.patch("integrations.StsConfig.load", return_value=StsConfig())  # gone after break
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch(
+        "authorization_service_operator_shared.sts.StsConfig.load", return_value=StsConfig()
+    )  # gone after break
 
     state = create_state(relations=[database_relation, openfga_relation, sts_relation])
     out = CTX.run(CTX.on.relation_broken(sts_relation), state)
@@ -375,9 +419,14 @@ def test_run_migration_action_leader_success(
     database_relation: testing.Relation,
     openfga_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
-    migrate_mock = mocker.patch("cli.CommandLine.run_migration", return_value=None)
-    peer_setitem = mocker.patch("integrations.PeerData.__setitem__", return_value=None)
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    migrate_mock = mocker.patch("charm.CommandLine.run_migration", return_value=None)
+    peer_setitem = mocker.patch(
+        "authorization_service_operator_shared.peer.PeerData.__setitem__", return_value=None
+    )
 
     state = create_state(
         leader=True,
@@ -401,10 +450,80 @@ def test_run_migration_action_workload_error_calls_fail(
     mocker: MockerFixture,
     database_relation: testing.Relation,
 ) -> None:
-    mocker.patch("integrations.DatabaseConfig.load", return_value=DB_CONFIG)
-    mocker.patch("cli.CommandLine.run_migration", side_effect=WorkloadError("DB error"))
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch("charm.CommandLine.run_migration", side_effect=WorkloadError("DB error"))
 
     state = create_state(leader=True, relations=[database_relation])
     with pytest.raises(testing.ActionFailed) as exc_info:
         CTX.run(CTX.on.action("run-migration"), state)
     assert "DB error" in exc_info.value.message
+
+
+def test_authorization_service_info_relation_publishes_data(
+    mocker: MockerFixture,
+    mock_openfga_ready: None,
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    info_relation = testing.Relation(
+        endpoint="authorization-service-info",
+        interface="authorization_service_info",
+    )
+    peer_relation = testing.PeerRelation(
+        endpoint="authorization-service-peers",
+        interface="authorization_service_peers",
+        local_app_data={MIGRATION_COMPLETED: '"0.1.0"'},
+    )
+
+    state = create_state(
+        leader=True,
+        peer_relation=peer_relation,
+        relations=[database_relation, openfga_relation, info_relation],
+    )
+    out = CTX.run(
+        CTX.on.relation_joined(info_relation),
+        state,
+    )
+
+    out_rel = out.get_relation(info_relation.id)
+    assert out_rel.local_app_data.get("migration_version") == "0.1.0"
+
+
+def test_openfga_model_id_version_lookup(
+    mocker: MockerFixture,
+    mock_openfga_ready: None,
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch("charm.CommandLine.get_service_version", return_value="1.2.0")
+    peer_relation = testing.PeerRelation(
+        endpoint="authorization-service-peers",
+        interface="authorization_service_peers",
+        local_app_data={
+            f"{OPENFGA_MODEL_ID}_1.2.0": '"model_v120"',
+        },
+    )
+
+    state = create_state(
+        leader=True,
+        peer_relation=peer_relation,
+        relations=[database_relation, openfga_relation],
+    )
+    out = CTX.run(
+        CTX.on.pebble_ready(container=state.get_container("authorization-service")),
+        state,
+    )
+    container = out.get_container("authorization-service")
+    env = container.plan.services["authorization-service"].environment
+    assert env["OPENFGA_AUTHORIZATION_MODEL_ID"] == "model_v120"

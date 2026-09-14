@@ -5,6 +5,11 @@
 
 from unittest.mock import MagicMock
 
+from authorization_service_operator_shared.database import DatabaseConfig
+from authorization_service_operator_shared.ingress import IstioIngressIntegration
+from authorization_service_operator_shared.observability import TracingConfig
+from authorization_service_operator_shared.openfga import OpenFGAConfig as OpenFGAIntegrationData
+from authorization_service_operator_shared.sts import StsConfig
 from charmlibs.interfaces.istio_ingress_route import IstioIngressRouteConfig
 from charms.secure_token_service.v0.sts_info import (
     StsInfoRelationDataMissingError,
@@ -12,14 +17,6 @@ from charms.secure_token_service.v0.sts_info import (
 )
 
 from constants import INGRESS_HTTP_PORT, INGRESS_HTTPS_PORT
-from integrations import (
-    DatabaseConfig,
-    IstioIngressIntegration,
-    OpenFGAIntegration,
-    OpenFGAIntegrationData,
-    StsConfig,
-    TracingConfig,
-)
 
 # ---------------------------------------------------------------------------
 # DatabaseConfig
@@ -48,7 +45,7 @@ class TestDatabaseConfig:
     def test_load_returns_config_on_valid_data(self):
         requirer = _make_database_requirer({
             "endpoints": "db.example.com:5432",
-            "username": "cerberus",
+            "username": "authz_user",
             "password": "secret",
             "database": "authorization_service",
         })
@@ -56,7 +53,7 @@ class TestDatabaseConfig:
         assert config.is_ready
         assert config.host == "db.example.com"
         assert config.port == "5432"
-        assert config.username == "cerberus"
+        assert config.username == "authz_user"
         assert config.password == "secret"
         assert config.dbname == "authorization_service"
 
@@ -121,45 +118,16 @@ def _make_store_info(
 
 
 class TestOpenFGAIntegration:
-    def test_is_store_ready_false_when_no_relation(self):
-        integration = OpenFGAIntegration(_make_openfga_requirer(store_info=None))
-        assert integration.is_store_ready() is False
-
-    def test_is_store_ready_true_when_store_id_present(self):
-        info = _make_store_info()
-        integration = OpenFGAIntegration(_make_openfga_requirer(store_info=info))
-        assert integration.is_store_ready() is True
-
-    def test_openfga_integration_data_defaults_when_no_store(self):
-        integration = OpenFGAIntegration(_make_openfga_requirer(store_info=None))
-        data = integration.openfga_integration_data
-        assert data == OpenFGAIntegrationData()
-
-    def test_openfga_integration_data_returns_parsed_values(self):
-        info = _make_store_info()
-        integration = OpenFGAIntegration(_make_openfga_requirer(store_info=info))
-        data = integration.openfga_integration_data
-        assert data.url == "http://openfga:8080"
-        assert data.store_id == "store-123"
-        assert data.api_token == "api-key"
-
-    def test_openfga_integration_data_empty_url_returns_defaults(self):
-        info = _make_store_info(http_api_url="")
-        integration = OpenFGAIntegration(_make_openfga_requirer(store_info=info))
-        data = integration.openfga_integration_data
-        assert data.url == ""
-
     def test_to_env_vars_returns_expected_keys(self):
         data = OpenFGAIntegrationData(
-            url="http://openfga:8080",
+            address="http://openfga:8080",
             store_id="store-abc",
-            api_token="tok",
+            token="tok",
         )
         env = data.to_env_vars()
-        assert env["OPENFGA_API_SCHEME"] == "http"
-        assert env["OPENFGA_API_HOST"] == "openfga:8080"
+        assert env["OPENFGA_ADDRESS"] == "http://openfga:8080"
         assert env["OPENFGA_STORE_ID"] == "store-abc"
-        assert env["OPENFGA_API_TOKEN"] == "tok"
+        assert env["OPENFGA_API_KEY"] == "tok"
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +159,7 @@ class TestTracingConfig:
     def test_to_env_vars_sets_telemetry_enabled(self):
         config = TracingConfig(otlp_endpoint="http://tempo:4318")
         env = config.to_env_vars()
-        assert env["TELEMETRY_ENABLED"] is True
+        assert env["TELEMETRY_ENABLED"] == "true"
         assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://tempo:4318"
 
 
