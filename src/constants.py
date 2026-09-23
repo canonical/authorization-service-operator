@@ -3,7 +3,6 @@
 
 """String constants for the Authorization Service charm."""
 
-
 CONTAINER_NAME = "authorization-service"
 
 # Integrations

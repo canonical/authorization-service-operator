@@ -10,7 +10,10 @@ from functools import cached_property
 import ops
 from authorization_service_operator_shared.cli import CommandLine
 from authorization_service_operator_shared.configs import CharmConfig
-from authorization_service_operator_shared.database import DatabaseRelationHandler
+from authorization_service_operator_shared.database import (
+    DatabaseConfig,
+    DatabaseRelationHandler,
+)
 from authorization_service_operator_shared.exceptions import (
     CreateFgaModelError,
     IntegrationDataError,
@@ -272,11 +275,18 @@ class AuthorizationServiceCharm(ops.CharmBase):
         fga_env = self._openfga.get_env_vars() if self._openfga.is_ready() else {}
         openfga_store_id = fga_env.get("OPENFGA_STORE_ID", "")
 
+        db_config = self._database.config if self._database.is_ready() else DatabaseConfig()
+
         self.authz_info_provider.publish_info(
             workload_version=self._workload_version,
             migration_version=migration_version,
             openfga_store_id=openfga_store_id,
             openfga_model_id=self._openfga_model_id,
+            db_host=db_config.host,
+            db_port=db_config.port,
+            db_name=db_config.dbname,
+            db_user=db_config.username,
+            db_password=db_config.password,
         )
 
     def _ensure_openfga_model(self) -> bool:
