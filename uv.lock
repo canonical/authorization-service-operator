@@ -220,7 +220,7 @@ unit = [
 [[package]]
 name = "authorization-service-operator-shared"
 version = "0.1.0"
-source = { git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=main#064520c66b07fad961763fb09598b6b621b469e0" }
+source = { git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=main#53178c1db7832e2c39b940b63419a0d52f4dcd98" }
 dependencies = [
     { name = "charmlibs-interfaces-istio-ingress-route" },
     { name = "ops" },
