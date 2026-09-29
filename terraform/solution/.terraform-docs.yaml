@@ -1,0 +1,15 @@
+formatter: markdown table
+
+content: |-
+  {{ .Header }}
+  ---
+  {{ .Providers }}
+  ---
+  {{ .Requirements }}
+  ---
+  {{ .Inputs }}
+  ---
+  {{ .Outputs }}
+
+sort:
+  enabled: false
