@@ -27,8 +27,8 @@ config:
   options:
     log_level:
       description: |
-        The verbosity of logs produced by STS.
-        Available values are: panic, fatal, error, warn, info, debug, and trace.
+        The verbosity of logs produced by Authorization Service Server.
+        Available values are: debug, info, warn, error.
       type: string
       default: "info"
     dev:
