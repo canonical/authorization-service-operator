@@ -106,7 +106,7 @@ version = "0.1.0"
 description = "Canonical Authorization Service Operator"
 requires-python = ">=3.10"
 dependencies = [
-    "authorization-service-operator-shared @ git+https://github.com/canonical/authorization-service-operator-shared.git@main",
+    "authorization-service-operator-shared @ git+https://github.com/canonical/authorization-service-operator-shared.git@fix/db-handler-default-extra-user-roles",
     "charmlibs-interfaces-istio-ingress-route==1.0.2",
     "cosl~=1.9.1",
     "jsonschema==4.26.0",
@@ -156,4 +156,4 @@ package = false
 
 # Shared library for the authorization service operators
 [tool.uv.sources]
-authorization-service-operator-shared = { git = "https://github.com/canonical/authorization-service-operator-shared.git", branch = "main" }
+authorization-service-operator-shared = { git = "https://github.com/canonical/authorization-service-operator-shared.git", branch = "fix/db-handler-default-extra-user-roles" }
