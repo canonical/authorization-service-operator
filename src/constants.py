@@ -18,7 +18,7 @@ PEER_INTEGRATION_NAME = "authorization-service-peers"
 AUTHORIZATION_SERVICE_INFO_INTEGRATION_NAME = "authorization-service-info"
 
 # Database
-PG_DATABASE_EXTRA_USER_ROLES = "SUPERUSER"
+PG_DATABASE_EXTRA_USER_ROLES = ""
 
 # Ports
 GRPC_PORT = 9091

@@ -156,4 +156,4 @@ package = false
 
 # Shared library for the authorization service operators
 [tool.uv.sources]
-authorization-service-operator-shared = { git = "https://github.com/canonical/authorization-service-operator-shared.git", branch = "main" }
+authorization-service-operator-shared = { git = "https://github.com/canonical/authorization-service-operator-shared.git", rev = "31bc54b9" }
