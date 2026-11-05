@@ -54,6 +54,7 @@ from constants import (
     OPENFGA_INTEGRATION_NAME,
     OPENFGA_MODEL_ID,
     PEER_INTEGRATION_NAME,
+    PG_DATABASE_EXTRA_USER_ROLES,
     PG_DATABASE_INTEGRATION_NAME,
     STS_INFO_INTEGRATION_NAME,
     TRACING_INTEGRATION_NAME,
@@ -101,6 +102,7 @@ class AuthorizationServiceCharm(ops.CharmBase):
             self,
             relation_name=PG_DATABASE_INTEGRATION_NAME,
             database_name="authorization_service",
+            extra_user_roles=PG_DATABASE_EXTRA_USER_ROLES,
         )
 
         self._openfga_requires = OpenFGARequires(
