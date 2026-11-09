@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -220,7 +220,7 @@ unit = [
 [[package]]
 name = "authorization-service-operator-shared"
 version = "0.1.0"
-source = { git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=main#53178c1db7832e2c39b940b63419a0d52f4dcd98" }
+source = { git = "https://github.com/canonical/authorization-service-operator-shared.git?branch=main#5a034616ad6fd0efe082bbf923640ebec6a3653b" }
 dependencies = [
     { name = "charmlibs-interfaces-istio-ingress-route" },
     { name = "ops" },
