@@ -27,11 +27,22 @@ APP_IMAGE = METADATA["resources"]["oci-image"]["upstream-source"]
 DB_APP = "postgresql-k8s"
 DB_CHANNEL = "14/stable"
 
+OPENFGA_APP = "openfga-k8s"
+OPENFGA_CHANNEL = "latest/edge"
+
+ISTIO_APP = "istio-k8s"
+ISTIO_INGRESS_APP = "istio-ingress-k8s"
+ISTIO_CHANNEL = "dev/edge"
+
 StatusPredicate = Callable[[jubilant.Status], bool]
 
 
 def all_active(*apps: str) -> StatusPredicate:
     return lambda status: jubilant.all_active(status, *apps)
+
+
+def all_agents_idle(*apps: str) -> StatusPredicate:
+    return lambda status: jubilant.all_agents_idle(status, *apps)
 
 
 def is_active(app: str) -> StatusPredicate:
@@ -95,12 +106,30 @@ def get_app_integration_data(
     return data.get("application-data") if data else None
 
 
+def get_ingress_external_host(
+    juju: jubilant.Juju,
+    app_name: str = APP,
+    endpoint_name: str = "ingress",
+) -> str:
+    """Retrieve the external host IP from an app's ingress relation data."""
+    app_data = get_app_integration_data(juju, app_name, endpoint_name)
+
+    if app_data and (external_host := app_data.get("external_host")):
+        return external_host
+
+    raise ValueError(
+        f"Could not find 'external_host' in the '{endpoint_name}' relation data for {app_name}"
+    )
+
+
 @contextmanager
 def remove_integration(
-    juju: jubilant.Juju, remote_app_name: str, integration_name: str
+    juju: jubilant.Juju, remote_app_name: str, integration_name: str, endpoint: str = ""
 ) -> Generator[None, None, None]:
     """Temporarily remove an integration, restoring it after the context exits."""
-    juju.remove_relation(f"{APP}:{integration_name}", remote_app_name)
+    local_endpoint = f"{APP}:{integration_name}" if integration_name else APP
+    remote_endpoint = f"{remote_app_name}:{endpoint}" if endpoint else remote_app_name
+    juju.remove_relation(local_endpoint, remote_endpoint)
     try:
         yield
     finally:
@@ -112,17 +141,17 @@ def remove_integration(
                 reraise=True,
             ):
                 with attempt:
-                    juju.integrate(f"{APP}:{integration_name}", remote_app_name)
+                    juju.integrate(local_endpoint, remote_endpoint)
         except RetryError:
             logger.error(
-                "Failed to restore the integration: %s:%s - %s",
-                APP,
-                integration_name,
-                remote_app_name,
+                "Failed to restore the integration: %s - %s",
+                local_endpoint,
+                remote_endpoint,
             )
             raise RuntimeError("Failed to restore integration")
 
         juju.wait(
-            ready=lambda status: jubilant.all_active(status, APP, remote_app_name),
+            ready=all_active(APP, remote_app_name),
+            error=any_error(APP, remote_app_name),
             timeout=5 * 60,
         )
