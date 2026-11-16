@@ -53,6 +53,7 @@ def test_build_and_deploy(juju: jubilant.Juju, local_charm: Path, tmp_path: Path
         DB_APP,
         channel=DB_CHANNEL,
         trust=True,
+        force=True,
     )
     juju.deploy(
         OPENFGA_APP,
