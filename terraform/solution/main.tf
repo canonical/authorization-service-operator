@@ -19,12 +19,12 @@ data "juju_offer" "ingress" {
 }
 
 data "juju_offer" "kafka" {
-  url = var.kafka_offer_url
+  count = var.kafka_offer_url != null ? 1 : 0
+  url   = var.kafka_offer_url
 }
 
 data "juju_offer" "sts_info" {
-  count = var.sts_info_offer_url != null ? 1 : 0
-  url   = var.sts_info_offer_url
+  url = var.sts_info_offer_url
 }
 
 data "juju_offer" "metrics" {

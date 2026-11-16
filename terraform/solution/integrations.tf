@@ -91,10 +91,8 @@ resource "juju_integration" "ingress" {
 
 # STS info cross-model integration for server
 resource "juju_integration" "sts_info" {
-  count = var.sts_info_offer_url != null ? 1 : 0
-
   application {
-    offer_url = data.juju_offer.sts_info[0].url
+    offer_url = data.juju_offer.sts_info.url
   }
 
   application {
@@ -105,10 +103,26 @@ resource "juju_integration" "sts_info" {
   model_uuid = data.juju_model.this.uuid
 }
 
+# STS info cross-model integration for listener
+resource "juju_integration" "sts_info_listener" {
+  application {
+    offer_url = data.juju_offer.sts_info.url
+  }
+
+  application {
+    name     = module.authorization_service_listener.application.name
+    endpoint = "sts-info"
+  }
+
+  model_uuid = data.juju_model.this.uuid
+}
+
 # Kafka cross-model integration for listener
 resource "juju_integration" "kafka" {
+  count = var.kafka_offer_url != null ? 1 : 0
+
   application {
-    offer_url = data.juju_offer.kafka.url
+    offer_url = data.juju_offer.kafka[0].url
   }
 
   application {

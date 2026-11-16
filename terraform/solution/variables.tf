@@ -25,12 +25,12 @@ variable "ingress_offer_url" {
 variable "kafka_offer_url" {
   description = "Kafka Juju Offer URL (cross-model Kafka endpoint for listener)"
   type        = string
+  default     = null
 }
 
 variable "sts_info_offer_url" {
   description = "STS Info Juju Offer URL (cross-model STS endpoint)"
   type        = string
-  default     = null
 }
 
 variable "authorization_service" {
