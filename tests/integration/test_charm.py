@@ -33,6 +33,7 @@ from tests.integration.util import (
     all_agents_idle,
     and_,
     any_error,
+    fast_forward,
     get_ingress_external_host,
     is_active,
     is_blocked,
@@ -159,14 +160,15 @@ def test_scale_up(
     target_unit_num = 2
     juju.cli("scale-application", APP, str(target_unit_num))
 
-    juju.wait(
-        ready=and_(
-            all_active(APP),
-            unit_number(APP, target_unit_num),
-        ),
-        error=any_error(APP),
-        timeout=5 * 60,
-    )
+    with fast_forward(juju):
+        juju.wait(
+            ready=and_(
+                all_active(APP),
+                unit_number(APP, target_unit_num),
+            ),
+            error=any_error(APP),
+            timeout=5 * 60,
+        )
 
     follower_peer_data = app_integration_data(APP, PEER_INTEGRATION_NAME, 1)
     assert follower_peer_data
