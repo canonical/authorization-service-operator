@@ -12,7 +12,7 @@ output "provides" {
     authorization-service-info = "authorization-service-info"
     forward-auth               = "forward-auth"
     grafana-dashboard          = "grafana-dashboard"
-    logging                    = "logging"
+    metrics-endpoint           = "metrics-endpoint"
   }
 }
 
@@ -20,6 +20,7 @@ output "requires" {
   description = "Map of requires endpoint names"
   value = {
     ingress     = "ingress"
+    logging     = "logging"
     openfga     = "openfga"
     pg-database = "pg-database"
     sts-info    = "sts-info"

@@ -134,6 +134,21 @@ resource "juju_integration" "kafka" {
 }
 
 # Optional COS integrations for Server
+resource "juju_integration" "metrics" {
+  count = var.metrics_offer_url != null ? 1 : 0
+
+  application {
+    offer_url = data.juju_offer.metrics[0].url
+  }
+
+  application {
+    name     = module.authorization_service.application.name
+    endpoint = "metrics-endpoint"
+  }
+
+  model_uuid = data.juju_model.this.uuid
+}
+
 resource "juju_integration" "tracing" {
   count = var.tracing_offer_url != null ? 1 : 0
 
@@ -190,6 +205,36 @@ resource "juju_integration" "metrics_worker" {
   application {
     name     = module.authorization_service_worker.application.name
     endpoint = "metrics-endpoint"
+  }
+
+  model_uuid = data.juju_model.this.uuid
+}
+
+resource "juju_integration" "tracing_worker" {
+  count = var.tracing_offer_url != null ? 1 : 0
+
+  application {
+    offer_url = data.juju_offer.tracing[0].url
+  }
+
+  application {
+    name     = module.authorization_service_worker.application.name
+    endpoint = "tracing"
+  }
+
+  model_uuid = data.juju_model.this.uuid
+}
+
+resource "juju_integration" "logging_worker" {
+  count = var.logging_offer_url != null ? 1 : 0
+
+  application {
+    offer_url = data.juju_offer.logging[0].url
+  }
+
+  application {
+    name     = module.authorization_service_worker.application.name
+    endpoint = "logging"
   }
 
   model_uuid = data.juju_model.this.uuid
