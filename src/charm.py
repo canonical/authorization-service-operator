@@ -21,7 +21,11 @@ from authorization_service_operator_shared.exceptions import (
 )
 from authorization_service_operator_shared.info import AuthorizationServiceInfoProvider
 from authorization_service_operator_shared.ingress import IstioIngressIntegration
-from authorization_service_operator_shared.observability import TracingConfig
+from authorization_service_operator_shared.observability import (
+    GrafanaDashboardHandler,
+    MetricsRelationHandler,
+    TracingConfig,
+)
 from authorization_service_operator_shared.openfga import OpenFGAModelData, OpenFGARelationHandler
 from authorization_service_operator_shared.peer import PeerData
 from authorization_service_operator_shared.services import (
@@ -30,7 +34,6 @@ from authorization_service_operator_shared.services import (
 )
 from authorization_service_operator_shared.sts import STSRelationHandler
 from authorization_service_operator_shared.utils import container_connectivity
-from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.oauth2_proxy_k8s.v0.forward_auth import ForwardAuthConfig, ForwardAuthProvider
 from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
@@ -40,7 +43,10 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     adjust_resource_requirements,
 )
 from charms.openfga_k8s.v1.openfga import OpenFGARequires, OpenFGAStoreRemovedEvent
-from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
+from charms.tempo_coordinator_k8s.v0.tracing import (
+    ProtocolNotRequestedError,
+    TracingEndpointRequirer,
+)
 
 from constants import (
     AUTHORIZATION_SERVICE_INFO_INTEGRATION_NAME,
@@ -50,6 +56,7 @@ from constants import (
     GRPC_PORT,
     INGRESS_INTEGRATION_NAME,
     LOGGING_INTEGRATION_NAME,
+    METRICS_INTEGRATION_NAME,
     MIGRATION_COMPLETED,
     OPENFGA_INTEGRATION_NAME,
     OPENFGA_MODEL_ID,
@@ -133,13 +140,18 @@ class AuthorizationServiceCharm(ops.CharmBase):
         )
 
         # Observability
+        self.metrics_handler = MetricsRelationHandler(
+            self,
+            relation_name=METRICS_INTEGRATION_NAME,
+        )
+        self.grafana_handler = GrafanaDashboardHandler(
+            self,
+            relation_name=GRAFANA_DASHBOARD_INTEGRATION_NAME,
+        )
         self._tracing = TracingEndpointRequirer(
-            self, relation_name=TRACING_INTEGRATION_NAME, protocols=["otlp_http", "otlp_grpc"]
+            self, relation_name=TRACING_INTEGRATION_NAME, protocols=["otlp_grpc"]
         )
         self._logging = LogForwarder(self, relation_name=LOGGING_INTEGRATION_NAME)
-        self._grafana_dashboard = GrafanaDashboardProvider(
-            self, relation_name=GRAFANA_DASHBOARD_INTEGRATION_NAME
-        )
 
         # Lifecycle events
         self.framework.observe(self.on.config_changed, self._on_holistic_handler)
@@ -245,6 +257,15 @@ class AuthorizationServiceCharm(ops.CharmBase):
         return model_data if isinstance(model_data, str) else ""
 
     @property
+    def _tracing_config(self) -> TracingConfig:
+        """Tracing configuration, guarding against non-leader databag access errors."""
+        try:
+            return TracingConfig.load(self._tracing)
+        except (ProtocolNotRequestedError, ops.RelationDataAccessError, ops.ModelError) as exc:
+            logger.debug("Tracing endpoint not yet available: %s", exc)
+            return TracingConfig()
+
+    @property
     def _pebble_layer(self) -> ops.pebble.Layer:
         """Pebble layer with all available env var sources merged."""
         return self._pebble_service.render_pebble_layer(
@@ -253,7 +274,8 @@ class AuthorizationServiceCharm(ops.CharmBase):
             self._openfga,
             OpenFGAModelData.load(self._openfga_model_id),
             self._sts,
-            TracingConfig.load(self._tracing),
+            self.metrics_handler,
+            self._tracing_config,
         )
 
     # --- Helpers ---
