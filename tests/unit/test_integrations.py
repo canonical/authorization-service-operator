@@ -136,7 +136,7 @@ class TestOpenFGAIntegration:
 
 
 def _make_tracing_requirer(
-    ready: bool = True, endpoint: str | None = "http://tempo:4318"
+    ready: bool = True, endpoint: str | None = "tempo:4317"
 ) -> MagicMock:
     requirer = MagicMock()
     requirer.is_ready.return_value = ready
@@ -152,15 +152,17 @@ class TestTracingConfig:
         assert TracingConfig.load(_make_tracing_requirer(endpoint=None)) == TracingConfig()
 
     def test_load_returns_config_on_valid_data(self):
-        config = TracingConfig.load(_make_tracing_requirer())
+        requirer = _make_tracing_requirer()
+        config = TracingConfig.load(requirer)
+        requirer.get_endpoint.assert_called_once_with("otlp_grpc")
         assert config is not None
-        assert config.otlp_endpoint == "http://tempo:4318"
+        assert config.otlp_endpoint == "tempo:4317"
 
     def test_to_env_vars_sets_telemetry_enabled(self):
-        config = TracingConfig(otlp_endpoint="http://tempo:4318")
+        config = TracingConfig(otlp_endpoint="tempo:4317")
         env = config.to_env_vars()
         assert env["TELEMETRY_ENABLED"] == "true"
-        assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://tempo:4318"
+        assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "tempo:4317"
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,8 @@
 
 """Charm state unit tests using ops.testing."""
 
+import json
+
 import ops
 import pytest
 from authorization_service_operator_shared.database import DatabaseConfig
@@ -33,7 +35,7 @@ STS_CONFIG = StsConfig(
     tls_enabled=True,
 )
 
-TRACING_CONFIG = TracingConfig(otlp_endpoint="http://tempo:4318")
+TRACING_CONFIG = TracingConfig(otlp_endpoint="tempo:4317")
 
 
 # ---------------------------------------------------------------------------
@@ -225,17 +227,111 @@ def test_tracing_relation_changed_sets_telemetry_enabled(
         "authorization_service_operator_shared.database.DatabaseConfig.load",
         return_value=DB_CONFIG,
     )
-    mocker.patch(
-        "authorization_service_operator_shared.observability.TracingConfig.load",
-        return_value=TRACING_CONFIG,
-    )
 
     state = create_state(relations=[database_relation, openfga_relation, tracing_relation])
     out = CTX.run(CTX.on.relation_changed(tracing_relation), state)
 
     container = out.get_container("authorization-service")
     env = container.plan.services["authorization-service"].environment
-    assert env.get("TELEMETRY_ENABLED") in (True, "True", "true")
+    assert env.get("TELEMETRY_ENABLED") == "true"
+    assert env.get("OTEL_EXPORTER_OTLP_ENDPOINT") == "tempo:4317"
+    assert env.get("OTEL_SERVICE_NAME") == "authorization-service"
+    assert env.get("METRICS_ENABLED") == "true"
+    assert env.get("METRICS_PORT") == "9100"
+    assert env.get("METRICS_PATH") == "/metrics"
+
+
+def test_tracing_relation_missing_protocol_on_non_leader(
+    mocker: MockerFixture,
+    mock_openfga_ready: None,
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    empty_tracing_relation = testing.Relation(
+        endpoint="tracing",
+        interface="tracing",
+        remote_app_name="tempo-coordinator-k8s",
+        remote_app_data={"receivers": "[]"},
+    )
+    peer_relation = testing.PeerRelation(
+        endpoint="authorization-service-peers",
+        interface="authorization_service_peers",
+        local_app_data={
+            MIGRATION_COMPLETED: '"0.2.1"',
+            f"{OPENFGA_MODEL_ID}_0.2.1": '"model-xyz"',
+        },
+    )
+    state = create_state(
+        leader=False,
+        peer_relation=peer_relation,
+        relations=[database_relation, openfga_relation, empty_tracing_relation],
+    )
+    out = CTX.run(CTX.on.relation_changed(empty_tracing_relation), state)
+
+    container = out.get_container("authorization-service")
+    env = container.plan.services["authorization-service"].environment
+    assert env.get("TELEMETRY_ENABLED") == "false"
+    assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in env
+
+
+def test_metrics_endpoint_relation_publishes_scrape_jobs_and_alerts(
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    metrics_relation = testing.Relation(
+        endpoint="metrics-endpoint",
+        interface="prometheus_scrape",
+        remote_app_name="prometheus-k8s",
+    )
+    state = create_state(
+        leader=True,
+        relations=[database_relation, openfga_relation, metrics_relation],
+    )
+    out = CTX.run(CTX.on.relation_joined(metrics_relation), state)
+
+    rel_out = out.get_relation(metrics_relation.id)
+    scrape_jobs = json.loads(rel_out.local_app_data["scrape_jobs"])
+    assert scrape_jobs == [
+        {"metrics_path": "/metrics", "static_configs": [{"targets": ["*:9100"]}]}
+    ]
+    alert_rules = json.loads(rel_out.local_app_data["alert_rules"])
+    alert_names = {
+        rule["alert"] for group in alert_rules.get("groups", []) for rule in group.get("rules", [])
+    }
+    assert "AuthorizationServiceUnavailable-multiple" in alert_names
+    assert "AuthorizationServiceUnavailable-all" in alert_names
+
+
+def test_logging_relation_configures_log_forwarding(
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    logging_relation = testing.Relation(
+        endpoint="logging",
+        interface="loki_push_api",
+        remote_app_name="loki-k8s",
+        remote_units_data={
+            0: {"endpoint": '{"url": "http://loki:3100/loki/api/v1/push"}'},
+        },
+    )
+    state = create_state(
+        leader=True,
+        relations=[database_relation, openfga_relation, logging_relation],
+    )
+    out = CTX.run(CTX.on.relation_changed(logging_relation), state)
+
+    container = out.get_container("authorization-service")
+    assert "authorization-service-log-forwarding" in container.layers
+    rel_out = out.get_relation(logging_relation.id)
+    alert_rules = json.loads(rel_out.local_app_data["alert_rules"])
+    alert_names = {
+        rule["alert"] for group in alert_rules.get("groups", []) for rule in group.get("rules", [])
+    }
+    assert "HighFrequencyHighSeverityLog" in alert_names
 
 
 # ---------------------------------------------------------------------------
