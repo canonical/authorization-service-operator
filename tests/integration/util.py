@@ -170,11 +170,12 @@ def remove_integration(
             )
             raise RuntimeError("Failed to restore integration")
 
-        juju.wait(
-            ready=all_active(APP, remote_app_name),
-            error=any_error(APP, remote_app_name),
-            timeout=5 * 60,
-        )
+        with fast_forward(juju):
+            juju.wait(
+                ready=all_active(APP, remote_app_name),
+                error=any_error(APP, remote_app_name),
+                timeout=5 * 60,
+            )
 
 
 @contextmanager
