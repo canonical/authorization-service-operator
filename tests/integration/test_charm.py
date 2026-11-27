@@ -110,6 +110,15 @@ def test_istio_ingress_integration(juju: jubilant.Juju) -> None:
         channel=ISTIO_CHANNEL,
         trust=True,
     )
+    juju.wait(
+        ready=and_(
+            all_active(ISTIO_APP),
+            all_agents_idle(ISTIO_APP),
+        ),
+        error=any_error(ISTIO_APP),
+        timeout=DEPLOY_TIMEOUT,
+    )
+
     juju.deploy(
         ISTIO_INGRESS_APP,
         channel=ISTIO_CHANNEL,
