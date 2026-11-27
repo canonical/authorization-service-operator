@@ -443,7 +443,7 @@ class AuthorizationServiceCharm(ops.CharmBase):
         logger.error("Resource patching failed: %s", event.message)
         self._on_holistic_handler(event)
 
-    def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:
+    def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:  # noqa: C901
         """Report the current unit status.
 
         Args:
@@ -452,7 +452,8 @@ class AuthorizationServiceCharm(ops.CharmBase):
         if missing := self._charm_config.get_missing_config_keys():
             event.add_status(ops.BlockedStatus(f"Invalid configuration: {missing}"))
 
-        event.add_status(self.resources_patch.get_status())
+        if not self.resources_patch.is_ready():
+            event.add_status(self.resources_patch.get_status())
 
         if not container_connectivity(self, CONTAINER_NAME):
             event.add_status(ops.WaitingStatus("Waiting for container"))
