@@ -175,13 +175,3 @@ def remove_integration(
             error=any_error(APP, remote_app_name),
             timeout=5 * 60,
         )
-
-
-@contextmanager
-def fast_forward(juju: jubilant.Juju, interval: str = "10s") -> Generator[None, None, None]:
-    """Temporarily reduce update-status-hook-interval."""
-    juju.model_config({"update-status-hook-interval": interval})
-    try:
-        yield
-    finally:
-        juju.model_config(reset="update-status-hook-interval")
