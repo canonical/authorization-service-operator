@@ -48,9 +48,9 @@ def mock_openfga_ready(mocker: MockerFixture) -> None:
 
 
 @pytest.fixture(autouse=True)
-def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
+def mocked_k8s_resource_patch(mocker: MockerFixture) -> Any:
     """Prevent KubernetesComputeResourcesPatch from making real K8s API calls."""
-    mocker.patch(
+    mock_patcher = mocker.patch(
         "charms.observability_libs.v0.kubernetes_compute_resources_patch.ResourcePatcher",
         autospec=True,
     )
@@ -61,6 +61,7 @@ def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
         is_ready=lambda *a, **kw: True,
         get_status=lambda *a, **kw: ActiveStatus(),
     )
+    return mock_patcher.return_value
 
 
 @pytest.fixture(autouse=True)
