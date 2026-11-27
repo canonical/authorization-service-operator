@@ -100,6 +100,9 @@ Integrate with the Canonical Observability Stack (COS) for logging,
 dashboards, and distributed tracing:
 
 ```bash
+# Relate to Prometheus for metrics scraping
+juju integrate authorization-service:metrics-endpoint prometheus-k8s:metrics-endpoint
+
 # Relate to Loki for log aggregation
 juju integrate authorization-service:logging loki-k8s:logging
 
@@ -107,7 +110,7 @@ juju integrate authorization-service:logging loki-k8s:logging
 juju integrate authorization-service:grafana-dashboard grafana-k8s:grafana-dashboard
 
 # Relate to Tempo for OpenTelemetry tracing
-juju integrate authorization-service:tracing tempo-k8s:tracing
+juju integrate authorization-service:tracing tempo-coordinator-k8s:tracing
 ```
 
 ### Database Migrations
