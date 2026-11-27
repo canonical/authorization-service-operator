@@ -441,7 +441,6 @@ class AuthorizationServiceCharm(ops.CharmBase):
             event: The patch_failed event.
         """
         logger.error("Resource patching failed: %s", event.message)
-        self._on_holistic_handler(event)
 
     def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:  # noqa: C901
         """Report the current unit status.

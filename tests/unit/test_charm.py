@@ -3,18 +3,26 @@
 
 """Charm state unit tests using ops.testing."""
 
+from typing import Any
+
 import ops
 import pytest
 from authorization_service_operator_shared.database import DatabaseConfig
 from authorization_service_operator_shared.exceptions import WorkloadError
 from authorization_service_operator_shared.observability import TracingConfig
 from authorization_service_operator_shared.sts import StsConfig
+from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
+    KubernetesComputeResourcesPatch,
+)
 from conftest import MODEL_NAME, create_state
+from lightkube import ApiError
 from ops import testing
 from pytest_mock import MockerFixture
 
 from charm import AuthorizationServiceCharm
 from constants import GRPC_PORT, MIGRATION_COMPLETED, OPENFGA_MODEL_ID
+
+_REAL_K8S_IS_READY = KubernetesComputeResourcesPatch.is_ready
 
 CHARM_TYPE = AuthorizationServiceCharm
 CTX = testing.Context(CHARM_TYPE)
@@ -390,7 +398,7 @@ def test_forward_auth_config_published_on_relation_created(
 
 
 # ---------------------------------------------------------------------------
-# 11.18  patch_failed → BlockedStatus
+# 11.18  Resource patch status handling
 # ---------------------------------------------------------------------------
 
 
@@ -406,6 +414,82 @@ def test_resource_patch_failed_yields_blocked(mocker: MockerFixture) -> None:
     state = create_state()
     out = CTX.run(CTX.on.config_changed(), state)
     assert isinstance(out.unit_status, ops.BlockedStatus)
+
+
+def test_resource_patch_ready_suppresses_waiting_status(
+    mocker: MockerFixture,
+    mock_openfga_ready: None,
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch("charm.KubernetesComputeResourcesPatch.is_ready", return_value=True)
+    get_status_mock = mocker.patch(
+        "charm.KubernetesComputeResourcesPatch.get_status",
+        return_value=ops.WaitingStatus("waiting for resources patch to apply"),
+    )
+
+    state = create_state(relations=[database_relation, openfga_relation])
+    out = CTX.run(
+        CTX.on.pebble_ready(container=state.get_container("authorization-service")),
+        state,
+    )
+    assert out.unit_status == ops.ActiveStatus()
+    get_status_mock.assert_not_called()
+
+
+def test_resource_patch_not_ready_falls_through_to_get_status(
+    mocker: MockerFixture,
+    mock_openfga_ready: None,
+    database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+) -> None:
+    mocker.patch(
+        "authorization_service_operator_shared.database.DatabaseConfig.load",
+        return_value=DB_CONFIG,
+    )
+    mocker.patch("charm.KubernetesComputeResourcesPatch.is_ready", return_value=False)
+    get_status_mock = mocker.patch(
+        "charm.KubernetesComputeResourcesPatch.get_status",
+        return_value=ops.WaitingStatus("waiting for resources patch to apply"),
+    )
+
+    state = create_state(relations=[database_relation, openfga_relation])
+    out = CTX.run(
+        CTX.on.pebble_ready(container=state.get_container("authorization-service")),
+        state,
+    )
+    assert out.unit_status == ops.WaitingStatus("waiting for resources patch to apply")
+    get_status_mock.assert_called_once()
+
+
+def test_resource_patch_api_error_falls_through_without_holistic_handler(
+    mocker: MockerFixture,
+    mocked_k8s_resource_patch: Any,
+) -> None:
+    mocker.patch.object(KubernetesComputeResourcesPatch, "is_ready", _REAL_K8S_IS_READY)
+    mocked_k8s_resource_patch.is_ready.side_effect = ApiError(
+        status={"code": 403, "message": "Forbidden"}
+    )
+    get_status_mock = mocker.patch(
+        "charm.KubernetesComputeResourcesPatch.get_status",
+        return_value=ops.BlockedStatus(
+            "Kubernetes resources patch failed: `juju trust` this application."
+        ),
+    )
+    holistic_mock = mocker.patch.object(
+        AuthorizationServiceCharm, "_on_holistic_handler", autospec=True
+    )
+
+    state = create_state()
+    out = CTX.run(CTX.on.update_status(), state)
+    assert isinstance(out.unit_status, ops.BlockedStatus)
+    assert "juju trust" in out.unit_status.message
+    get_status_mock.assert_called_once()
+    holistic_mock.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
